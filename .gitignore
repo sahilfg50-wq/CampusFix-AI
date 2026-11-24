@@ -1,0 +1,17 @@
+node_modules
+dist
+.DS_Store
+*.log
+firebase-debug.log*
+.firebase/
+.env
+.env.*
+!.env.example
+.vscode/*
+!.vscode/extensions.json
+
+# Exclude old backend backup
+functions-backup/
+
+# Old Firestore rules backup
+firestore.rules.backup

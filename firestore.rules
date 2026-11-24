@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    // Admin = a user whose users/{uid} document has role == 'admin'.
+    // Only you can set this (in the Firebase Console); the rules below never let a user change their own role.
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function shortText(v, min, max) { return v is string && v.size() >= min && v.size() <= max; }
+
+function mealKey(meal) {
+  return meal == 'Breakfast' ? 'breakfast'
+    : meal == 'Lunch' ? 'lunch'
+    : 'dinner';
+}
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+
+      // Sign-up: a user may create ONLY their own profile, and ONLY as a student.
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['name', 'email', 'role', 'createdAt'])
+        && request.resource.data.role == 'student'
+        && request.resource.data.email == request.auth.token.email
+        && shortText(request.resource.data.name, 1, 80)
+        && request.resource.data.createdAt == request.time;
+
+      // Users may edit only these fields. 'role' is NOT in the list.
+      allow update: if isOwner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'phone', 'residence'])
+        && shortText(request.resource.data.name, 1, 80)
+        && (!('phone' in request.resource.data) || shortText(request.resource.data.phone, 0, 30))
+        && (!('residence' in request.resource.data) || shortText(request.resource.data.residence, 0, 120));
+
+      allow delete: if false;
+    }
+
+    // ---------- complaints ----------
+    match /complaints/{complaintId} {
+      // Students read only their own complaints. Admins read all.
+      allow read: if isAdmin() || (signedIn() && resource.data.studentId == request.auth.uid);
+
+      // A student creates a complaint for themselves, always starting as 'Pending'.
+      allow create: if signedIn()
+        && complaintId == request.resource.data.complaintId
+        && request.resource.data.keys().hasOnly([
+             'complaintId', 'title', 'description', 'category', 'building', 'location',
+             'department', 'priority', 'status', 'reporter', 'studentId', 'studentEmail',
+             'aiNote', 'sla', 'updates', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasAll([
+             'complaintId', 'title', 'description', 'category', 'building', 'location',
+             'department', 'priority', 'status', 'reporter', 'studentId', 'studentEmail',
+             'aiNote', 'sla', 'updates', 'createdAt', 'updatedAt'])
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.studentEmail == request.auth.token.email
+        && request.resource.data.status == 'Pending'
+        && request.resource.data.priority in ['Critical', 'High', 'Medium', 'Low']
+        && request.resource.data.category in ['Wi-Fi & IT', 'Electrical', 'Plumbing', 'Furniture & Infrastructure', 'Housekeeping', 'Security & Safety', 'Mess & Dining', 'Other']
+        && request.resource.data.building in ['Aryabhatta Hostel', 'Gargi Hostel', 'Tagore Hostel', 'Academic Block A', 'Academic Block B', 'Central Library', 'Innovation & CS Block', 'Main Mess Hall', 'Sports Complex']
+        && request.resource.data.department in ['IT & Network Cell', 'Electrical Dept', 'Civil & Plumbing', 'Sanitation Services', 'Campus Security', 'Mess Committee', 'Estate & Furniture']
+        && shortText(request.resource.data.title, 5, 120)
+        && shortText(request.resource.data.description, 15, 2000)
+        && shortText(request.resource.data.location, 1, 120)
+        && shortText(request.resource.data.reporter, 1, 80)
+        && shortText(request.resource.data.aiNote, 0, 300)
+        && shortText(request.resource.data.sla, 0, 60)
+        && request.resource.data.updates is list
+        && request.resource.data.updates.size() >= 1
+        && request.resource.data.updates.size() <= 2
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      // ONLY admins may update, and ONLY these admin fields. Students can never update.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'priority', 'department', 'updates', 'updatedAt'])
+        && request.resource.data.status in ['Pending', 'In Progress', 'Resolved']
+        && request.resource.data.priority in ['Critical', 'High', 'Medium', 'Low']
+        && request.resource.data.department in ['IT & Network Cell', 'Electrical Dept', 'Civil & Plumbing', 'Sanitation Services', 'Campus Security', 'Mess Committee', 'Estate & Furniture']
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updates is list
+        && request.resource.data.updates.size() == resource.data.updates.size() + 1;
+
+      allow delete: if false;
+    }
+
+
+    // ---------- mess menus ----------
+    match /messMenu/{menuId} {
+      allow read: if signedIn();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'date', 'meal', 'time', 'deadline', 'deadlineAt',
+          'veg', 'nonVeg', 'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.date is string
+        && request.resource.data.meal in ['Breakfast', 'Lunch', 'Dinner']
+        && request.resource.data.time is string
+        && request.resource.data.deadline is string
+        && request.resource.data.deadlineAt is timestamp
+        && request.resource.data.veg is string
+        && request.resource.data.nonVeg is string
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // ---------- meal confirmations ----------
+    match /mealConfirmations/{confirmationId} {
+     allow get: if isAdmin()
+        || (signedIn() && confirmationId.matches('.*_' + request.auth.uid));
+
+      allow list: if isAdmin();
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'studentId', 'date', 'meal', 'preference', 'updatedAt'
+        ])
+        && request.resource.data.studentId == request.auth.uid
+        && request.resource.data.date is string
+        && request.resource.data.meal in ['Breakfast', 'Lunch', 'Dinner']
+        && request.resource.data.preference in ['Veg', 'Non-Veg']
+        && request.resource.data.updatedAt == request.time
+        && confirmationId == request.resource.data.date + '_'
+          + mealKey(request.resource.data.meal)
+          + '_' + request.auth.uid
+        && exists(/databases/$(database)/documents/messMenu/$(request.resource.data.date + '_' + mealKey(request.resource.data.meal)))
+        && request.time < get(
+          /databases/$(database)/documents/messMenu/$(request.resource.data.date + '_' + mealKey(request.resource.data.meal))
+        ).data.deadlineAt;
+
+      allow delete: if false;
+    }
+
+    // ---------- meal reports ----------
+    match /mealReports/{reportId} {
+      allow read: if isAdmin();
+
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'date', 'meal', 'preparedKg', 'servedMeals',
+          'leftoverKg', 'updatedAt', 'updatedBy'
+        ])
+        && request.resource.data.date is string
+        && request.resource.data.meal in ['Breakfast', 'Lunch', 'Dinner']
+        && request.resource.data.preparedKg is number
+        && request.resource.data.preparedKg >= 0
+        && request.resource.data.servedMeals is int
+        && request.resource.data.servedMeals >= 0
+        && request.resource.data.leftoverKg is number
+        && request.resource.data.leftoverKg >= 0
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // Everything else is closed.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

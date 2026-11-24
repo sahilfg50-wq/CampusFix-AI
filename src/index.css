@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f8fafc; --card: #ffffff; --tx: #0f172a; --mu: #64748b;
+  --bd: #e2e8f0; --pr: #2563eb; --soft: #f1f5f9;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220; --card: #131c2e; --tx: #e5e9f0; --mu: #94a3b8;
+    --bd: #25314a; --pr: #60a5fa; --soft: #1a2540; color-scheme: dark;
+  }
+}
+
+@layer base {
+  body { @apply bg-bg text-tx text-sm leading-normal antialiased; font-family: Inter, system-ui, sans-serif; }
+  h2 { @apply mb-1 text-lg font-bold; }
+  h3 { @apply mb-2.5 text-[15px] font-semibold; }
+  :focus-visible { outline: 2px solid var(--pr); outline-offset: 2px; }
+}
+
+@layer components {
+  .card { @apply mb-4 rounded-2xl border border-bd bg-card p-[18px]; }
+  .muted { @apply text-xs text-mu; }
+  .btn-pr { @apply min-h-10 cursor-pointer rounded-xl bg-pr px-4 py-2 font-semibold text-white disabled:opacity-60; }
+  .btn-gh { @apply min-h-10 cursor-pointer rounded-xl border border-bd bg-soft px-3.5 py-2 text-tx; }
+  .field { @apply min-h-10 w-full rounded-xl border border-bd bg-card px-3 py-2 text-tx; }
+  .label { @apply mb-1 mt-3 block font-medium; }
+  .err { @apply min-h-[1.1em] text-xs text-rose-600; }
+  .badge { @apply inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold; background: color-mix(in srgb, currentColor 13%, transparent); }
+  .id-mono { @apply text-xs font-semibold text-pr; font-family: ui-monospace, monospace; }
+  .nav-on { background: color-mix(in srgb, var(--pr) 12%, transparent); color: var(--pr); }
+  .ok-box { @apply mb-2.5 rounded-xl px-3 py-2 font-medium text-emerald-600; background: color-mix(in srgb, #059669 14%, transparent); }
+}
