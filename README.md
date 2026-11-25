@@ -420,6 +420,26 @@ The local demo was tested using Firebase Emulators. Production Firebase deployme
 
 
 
+\## Planned Features \& Future Enhancements
+
+
+
+\- Advanced analytics with 7-day, 30-day, 12-month, 2-year, and all-time data filters.
+
+\- AI-powered food waste analysis using historical preparation, consumption, and wastage data.
+
+\- Predictive food demand forecasting for breakfast, lunch, and dinner.
+
+\- Smart food preparation recommendations based on historical trends and student demand.
+
+\- Festival and holiday-based food consumption analysis.
+
+\- Estimated cost savings through reduced food waste and unnecessary food preparation.
+
+\- Automatic email notifications to relevant departments based on complaint categories.
+
+\- Improved complaint escalation and administrative workflows.
+
 \## Current Limitations
 
 
@@ -446,7 +466,7 @@ GitHub: https://github.com/sahilfg50-wq/CampusFix-AI
 
 
 
-\*\*CampusFix AI\*\*  
+\*\*CampusFix AI\*\*
 
 Making campus services smarter, more transparent, and more accountable.
 
