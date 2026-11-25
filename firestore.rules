@@ -119,7 +119,8 @@ function mealKey(meal) {
         || (signedIn() && confirmationId.matches('.*_' + request.auth.uid));
 
       allow list: if isAdmin();
-      allow create, update: if signedIn()
+     allow create, update: if signedIn()
+        && request.resource.data.meal != 'Dinner'
         && request.resource.data.keys().hasOnly([
           'studentId', 'date', 'meal', 'preference', 'updatedAt'
         ])
@@ -162,6 +163,15 @@ function mealKey(meal) {
       allow delete: if false;
     }
 
+// ---------- dinner token security ----------
+// Token records and counters are accessible only through Cloud Functions.
+match /mealTokens/{tokenId} {
+  allow read, write: if false;
+}
+
+match /mealTokenCounters/{date} {
+  allow read, write: if false;
+}
     // Everything else is closed.
     match /{document=**} { allow read, write: if false; }
   }

@@ -1,3 +1,5 @@
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
 
 import {
   collection,
@@ -109,10 +111,26 @@ export async function saveMealConfirmation({
 }) {
   const user = requireUser();
 
+  if (!['Breakfast', 'Lunch', 'Dinner'].includes(meal)) {
+    throw new Error('Invalid meal type.');
+  }
+
   if (!['Veg', 'Non-Veg'].includes(preference)) {
     throw new Error('Choose Veg or Non-Veg.');
   }
 
+  // Dinner preferences are handled by secure Cloud Functions.
+  if (meal === 'Dinner') {
+    if (!functions) {
+      throw new Error('Firebase Functions are not configured.');
+    }
+
+    const call = httpsCallable(functions, 'confirmDinnerPreference');
+    const result = await call({ date, preference });
+    return result.data;
+  }
+
+  // Existing Breakfast and Lunch confirmation flow.
   const id = menuId(date, meal);
   const menuRef = doc(db, 'messMenu', id);
   const menuSnapshot = await getDoc(menuRef);
@@ -122,15 +140,15 @@ export async function saveMealConfirmation({
   }
 
   const menu = menuSnapshot.data();
-const deadlineAt = menu.deadlineAt?.toDate();
+  const deadlineAt = menu.deadlineAt?.toDate();
 
-if (!deadlineAt || Number.isNaN(deadlineAt.getTime())) {
-  throw new Error('The meal deadline is invalid. Please ask admin to republish the menu.');
-}
+  if (!deadlineAt || Number.isNaN(deadlineAt.getTime())) {
+    throw new Error('The meal deadline is invalid. Please ask admin to republish the menu.');
+  }
 
-if (Date.now() >= deadlineAt.getTime()) {
-  throw new Error('The confirmation deadline has passed.');
-}
+  if (Date.now() >= deadlineAt.getTime()) {
+    throw new Error('The confirmation deadline has passed.');
+  }
 
   const confirmationRef = doc(
     db,
@@ -150,9 +168,28 @@ if (Date.now() >= deadlineAt.getTime()) {
     { merge: true }
   );
 
-  return true;
+  return { preference, tokenNumber: null };
 }
 
+// Admin: look up a dinner token.
+export async function lookupDinnerToken(date, tokenNumber) {
+  requireUser();
+
+  const call = httpsCallable(functions, 'lookupDinnerToken');
+  const result = await call({ date, tokenNumber });
+
+  return result.data;
+}
+
+// Admin: mark a dinner token as served.
+export async function markDinnerTokenServed(date, tokenNumber) {
+  requireUser();
+
+  const call = httpsCallable(functions, 'markDinnerTokenServed');
+  const result = await call({ date, tokenNumber });
+
+  return result.data;
+}
 // Admin: listen to confirmations for a date.
 export function subscribeMealConfirmations(date, onData, onError) {
   const q = query(

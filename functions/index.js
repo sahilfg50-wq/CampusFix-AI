@@ -213,3 +213,318 @@ export const processComplaintAutonomously = onCall(
     };
   }
 );
+// ---------- DINNER NON-VEG TOKEN SYSTEM ----------
+
+async function requireMessAdmin(uid) {
+  const profile = await db.collection('users').doc(uid).get();
+
+  if (!profile.exists || profile.data()?.role !== 'admin') {
+    throw new HttpsError(
+      'permission-denied',
+      'Only authorised mess staff can perform this action.'
+    );
+  }
+}
+
+function validateTokenInput(date, tokenNumber) {
+  if (
+    typeof date !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) {
+    throw new HttpsError('invalid-argument', 'Invalid date.');
+  }
+
+  if (
+    typeof tokenNumber !== 'string' ||
+    !/^\d{3}$/.test(tokenNumber)
+  ) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Enter a valid 3-digit token number.'
+    );
+  }
+}
+
+// Student: confirm dinner preference and allocate a token if Non-Veg.
+export const confirmDinnerPreference = onCall(
+  async (request) => {
+    const uid = request.auth?.uid;
+
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Please log in first.');
+    }
+
+    const { date, preference } = request.data || {};
+
+    if (
+      typeof date !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !['Veg', 'Non-Veg'].includes(preference)
+    ) {
+      throw new HttpsError(
+        'invalid-argument',
+        'Valid date and dinner preference are required.'
+      );
+    }
+
+    const profileSnapshot = await db.collection('users').doc(uid).get();
+
+    if (!profileSnapshot.exists) {
+      throw new HttpsError('failed-precondition', 'Student profile not found.');
+    }
+
+    const studentName = profileSnapshot.data().name || 'Unknown Student';
+
+    const menuRef = db.collection('messMenu').doc(`${date}_dinner`);
+    const confirmationRef = db.collection('mealConfirmations')
+      .doc(`${date}_dinner_${uid}`);
+    const counterRef = db.collection('mealTokenCounters').doc(date);
+
+    try {
+      return await db.runTransaction(async (transaction) => {
+        const menuSnapshot = await transaction.get(menuRef);
+        const confirmationSnapshot = await transaction.get(confirmationRef);
+
+        if (!menuSnapshot.exists) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Dinner menu has not been published.'
+          );
+        }
+
+        const deadline = menuSnapshot.data().deadlineAt?.toDate?.();
+
+        if (!deadline || Date.now() >= deadline.getTime()) {
+          throw new HttpsError(
+            'failed-precondition',
+            'Dinner confirmation deadline has passed or is invalid.'
+          );
+        }
+
+        const previous = confirmationSnapshot.exists
+          ? confirmationSnapshot.data()
+          : {};
+
+        const previousTokenNumber = previous.tokenNumber || null;
+
+        let tokenRef = null;
+        let tokenSnapshot = null;
+
+        if (previousTokenNumber) {
+          tokenRef = db.collection('mealTokens')
+            .doc(`${date}_${previousTokenNumber}`);
+
+          tokenSnapshot = await transaction.get(tokenRef);
+        }
+
+        if (preference === 'Veg') {
+          if (tokenSnapshot?.exists) {
+            const tokenData = tokenSnapshot.data();
+
+            if (tokenData.status === 'Served') {
+              throw new HttpsError(
+                'failed-precondition',
+                'This dinner token has already been served.'
+              );
+            }
+
+            transaction.update(tokenRef, {
+              status: 'Cancelled',
+              updatedAt: FieldValue.serverTimestamp(),
+            });
+          }
+
+          transaction.set(confirmationRef, {
+            studentId: uid,
+            studentName,
+            date,
+            meal: 'Dinner',
+            preference: 'Veg',
+            tokenNumber: null,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          return { preference: 'Veg', tokenNumber: null };
+        }
+
+        if (tokenSnapshot?.exists) {
+          const tokenData = tokenSnapshot.data();
+
+          if (tokenData.status === 'Served') {
+            throw new HttpsError(
+              'failed-precondition',
+              'This dinner token has already been served.'
+            );
+          }
+
+          transaction.update(tokenRef, {
+            preference: 'Non-Veg',
+            status: 'Pending',
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          transaction.set(confirmationRef, {
+            studentId: uid,
+            studentName,
+            date,
+            meal: 'Dinner',
+            preference: 'Non-Veg',
+            tokenNumber: previousTokenNumber,
+            updatedAt: FieldValue.serverTimestamp(),
+          }, { merge: true });
+
+          return {
+            preference: 'Non-Veg',
+            tokenNumber: previousTokenNumber,
+          };
+        }
+
+        const counterSnapshot = await transaction.get(counterRef);
+        const nextNumber = (counterSnapshot.exists
+          ? counterSnapshot.data().lastNumber || 0
+          : 0) + 1;
+
+        if (nextNumber > 999) {
+          throw new HttpsError(
+            'resource-exhausted',
+            'All 999 dinner tokens have been allocated for this date.'
+          );
+        }
+
+        const tokenNumber = String(nextNumber).padStart(3, '0');
+        const newTokenRef = db.collection('mealTokens')
+          .doc(`${date}_${tokenNumber}`);
+
+        transaction.set(counterRef, {
+          lastNumber: nextNumber,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        transaction.set(newTokenRef, {
+          date,
+          tokenNumber,
+          studentId: uid,
+          studentName,
+          meal: 'Dinner',
+          preference: 'Non-Veg',
+          status: 'Pending',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+
+        transaction.set(confirmationRef, {
+          studentId: uid,
+          studentName,
+          date,
+          meal: 'Dinner',
+          preference: 'Non-Veg',
+          tokenNumber,
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        return { preference: 'Non-Veg', tokenNumber };
+      });
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+
+      logger.error('Dinner token allocation failed', {
+        uid,
+        message: String(error?.message || error).slice(0, 300),
+      });
+
+      throw new HttpsError('internal', 'Could not confirm dinner preference.');
+    }
+  }
+);
+
+// Admin: look up a dinner token without marking it served.
+export const lookupDinnerToken = onCall(
+  async (request) => {
+    const uid = request.auth?.uid;
+
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Please log in first.');
+    }
+
+    await requireMessAdmin(uid);
+
+    const { date, tokenNumber } = request.data || {};
+    validateTokenInput(date, tokenNumber);
+
+    const snapshot = await db.collection('mealTokens')
+      .doc(`${date}_${tokenNumber}`)
+      .get();
+
+    if (!snapshot.exists) {
+      throw new HttpsError('not-found', 'Dinner token not found.');
+    }
+
+    return snapshot.data();
+  }
+);
+
+// Admin: mark a pending dinner token as served exactly once.
+export const markDinnerTokenServed = onCall(
+  async (request) => {
+    const uid = request.auth?.uid;
+
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Please log in first.');
+    }
+
+    await requireMessAdmin(uid);
+
+    const { date, tokenNumber } = request.data || {};
+    validateTokenInput(date, tokenNumber);
+
+    const tokenRef = db.collection('mealTokens')
+      .doc(`${date}_${tokenNumber}`);
+
+    try {
+      return await db.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(tokenRef);
+
+        if (!snapshot.exists) {
+          throw new HttpsError('not-found', 'Dinner token not found.');
+        }
+
+        const token = snapshot.data();
+
+        if (token.status === 'Cancelled') {
+          throw new HttpsError(
+            'failed-precondition',
+            'This token has been cancelled.'
+          );
+        }
+
+        if (token.status === 'Served') {
+          throw new HttpsError(
+            'already-exists',
+            'This token has already been marked as served.'
+          );
+        }
+
+        transaction.update(tokenRef, {
+          status: 'Served',
+          servedBy: uid,
+          servedAt: FieldValue.serverTimestamp(),
+        });
+
+        return {
+          success: true,
+          studentName: token.studentName,
+          tokenNumber: token.tokenNumber,
+          status: 'Served',
+        };
+      });
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+
+      logger.error('Dinner token verification failed', {
+        uid,
+        message: String(error?.message || error).slice(0, 300),
+      });
+
+      throw new HttpsError('internal', 'Could not verify dinner token.');
+    }
+  }
+);
