@@ -5,6 +5,7 @@ import { parseAiNote } from '../../utils/aiNote';
 import Timeline from '../../components/ui/Timeline';
 import EmptyState from '../../components/ui/EmptyState';
 import { friendlyError } from '../../lib/errors';
+import AgentCard from '../../components/ui/AgentCard';
 
 function Select({ label, value, onChange, options }) {
   const id = `a-${label.toLowerCase()}`;
@@ -72,6 +73,9 @@ export default function AdminComplaintDetails({ complaint: c, onNavigate, onUpda
               <p className="my-1.5">{ai.analysis}</p>
               {ai.action && <p><b>Suggested action:</b> {ai.action}</p>}
             </div>
+          </div>
+          <div className="mb-4">
+            <AgentCard complaint={c} />
           </div>
           <div className="card">
             <h3>Audit timeline</h3>

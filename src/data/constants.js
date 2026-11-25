@@ -21,21 +21,23 @@ export const PRIORITY_COLOR = {
   Low: '#64748b',
 };
 
+// [view id, label, icon]
 export const NAV = {
   student: [
-    ['dash', 'Dashboard'],
-    ['submit', 'Submit complaint'],
-    ['mine', 'My complaints'],
-    ['track', 'Track complaint'],
-    ['prof', 'Profile'],
-    ['menu', 'Mess Menu'],
+    ['dash', 'Dashboard', '🏠'],
+    ['submit', 'Submit complaint', '✍️'],
+    ['mine', 'My complaints', '📋'],
+    ['track', 'Track complaint', '📍'],
+    ['menu', 'Mess Menu', '🍽️'],
+    ['prof', 'Profile', '👤'],
   ],
 
   admin: [
-    ['ov', 'Overview'],
-    ['all', 'All complaints'],
-    ['ana', 'Analytics'],
-    ['mess', 'Mess Management'],
-    ['food', 'Food Waste Dashboard'],
+    ['ov', 'Overview', '📊'],
+    ['all', 'All complaints', '📋'],
+    ['inbox', 'AI Inbox', '🤖'],
+    ['ana', 'Analytics', '📈'],
+    ['mess', 'Mess Management', '🍽️'],
+    ['food', 'Food Waste', '♻️'],
   ],
 };

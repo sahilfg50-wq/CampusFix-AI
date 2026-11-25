@@ -203,27 +203,22 @@ export default function MessMenu() {
 
   return (
     <div className="space-y-4">
-      <div className="card">
-        <h2>Mess Menu</h2>
-        <p className="muted">
-          Today's menu and meal confirmation.
+      <div>
+        <h2 className="page-title">Mess Menu</h2>
+        <p className="mt-1 text-sm text-mu">
+          Today's menu · {new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
-        <p className="mt-1 text-sm text-mu">{date}</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-1 rounded-2xl bg-soft p-1">
         {mealNames.map((name) => (
           <button
             key={name}
             type="button"
             onClick={() => setSelectedMeal(name)}
-            className={`rounded-xl p-3 font-semibold ${
-              selectedMeal === name
-                ? 'bg-blue-600 text-white'
-                : 'bg-soft text-tx'
-            }`}
+            className={`tab ${selectedMeal === name ? 'tab-on' : ''}`}
           >
-            {name}
+            {name === 'Breakfast' ? '🌅' : name === 'Lunch' ? '☀️' : '🌙'} {name}
           </button>
         ))}
       </div>
@@ -269,9 +264,9 @@ export default function MessMenu() {
                   type="button"
                   disabled={deadlinePassed() || saving}
                   onClick={() => choosePreference('Veg')}
-                  className="btn-pr mt-4 w-full disabled:opacity-50"
+                  className={`mt-4 w-full ${preference === 'Veg' ? 'btn-pr !bg-emerald-600' : 'btn-gh'}`}
                 >
-                  Select Veg
+                  {preference === 'Veg' ? '✓ Veg selected' : 'Select Veg'}
                 </button>
               </div>
 
@@ -286,9 +281,9 @@ export default function MessMenu() {
                   type="button"
                   disabled={deadlinePassed() || saving}
                   onClick={() => choosePreference('Non-Veg')}
-                  className="btn-pr mt-4 w-full disabled:opacity-50"
+                  className={`mt-4 w-full ${preference === 'Non-Veg' ? 'btn-pr !bg-orange-600' : 'btn-gh'}`}
                 >
-                  Select Non-Veg
+                  {preference === 'Non-Veg' ? '✓ Non-Veg selected' : 'Select Non-Veg'}
                 </button>
               </div>
             </div>

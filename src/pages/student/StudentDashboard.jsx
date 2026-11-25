@@ -10,15 +10,35 @@ export default function StudentDashboard({ student, complaints, onNavigate }) {
   const urgent = mine.filter((c) => c.status !== 'Resolved' && ['Critical', 'High'].includes(c.priority));
   const track = (id) => onNavigate('track', id);
 
+  const waiting = mine.filter((c) => c.agentStatus === 'awaiting-student');
+
   return (
     <>
-      <div className="card border-0 text-white" style={{ background: 'linear-gradient(120deg,#2563eb,#4338ca)' }}>
-        <h2>Welcome back, {student.name.split(' ')[0]}</h2>
-        <div>Report an issue and follow it until it is fixed.</div>
-        <button type="button" className="mt-2.5 min-h-10 cursor-pointer rounded-xl bg-white px-4 py-2 font-semibold text-blue-700" onClick={() => onNavigate('submit')}>
-          Submit complaint
-        </button>
+      <div className="relative mb-4 overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-6 text-white shadow-lg shadow-indigo-500/20">
+        <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
+        <div className="relative">
+          <h2 className="!text-2xl">Welcome back, {student.name.split(' ')[0]} 👋</h2>
+          <p className="text-white/85">Report an issue. CampusFix AI routes it and helps you fix simple problems right away.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" className="min-h-10 cursor-pointer rounded-xl bg-white px-4 py-2 font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50" onClick={() => onNavigate('submit')}>
+              ✍️ Submit complaint
+            </button>
+            <button type="button" className="min-h-10 cursor-pointer rounded-xl bg-white/15 px-4 py-2 font-semibold text-white transition hover:bg-white/25" onClick={() => onNavigate('menu')}>
+              🍽️ Today's mess menu
+            </button>
+          </div>
+        </div>
       </div>
+
+      {waiting.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/40">
+          <p className="font-semibold text-sky-800 dark:text-sky-200">🛠️ The AI sent you steps to fix {waiting.length === 1 ? 'a problem' : `${waiting.length} problems`}</p>
+          <p className="mt-0.5 text-sm text-sky-700 dark:text-sky-300">Try them and tell us if it worked. If not, it goes to the department automatically.</p>
+          <div className="mt-2">
+            {waiting.map((c) => <ComplaintRow key={c.id} complaint={c} onOpen={track} />)}
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3.5">
         <KpiCard label="Total tickets" value={mine.length} sub="All time" color="#2563eb" />

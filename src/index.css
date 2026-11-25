@@ -3,35 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f8fafc; --card: #ffffff; --tx: #0f172a; --mu: #64748b;
-  --bd: #e2e8f0; --pr: #2563eb; --soft: #f1f5f9;
+  --bg: #f4f6fb; --card: #ffffff; --tx: #0f172a; --mu: #64748b;
+  --bd: #e5e8f0; --pr: #4f46e5; --soft: #eef1f7;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b1220; --card: #131c2e; --tx: #e5e9f0; --mu: #94a3b8;
-    --bd: #25314a; --pr: #60a5fa; --soft: #1a2540; color-scheme: dark;
+    --bg: #0a0f1c; --card: #111827; --tx: #e5e9f0; --mu: #94a3b8;
+    --bd: #1f2a40; --pr: #818cf8; --soft: #172036; color-scheme: dark;
   }
 }
 
 @layer base {
-  body { @apply bg-bg text-tx text-sm leading-normal antialiased; font-family: Inter, system-ui, sans-serif; }
-  h2 { @apply mb-1 text-lg font-bold; }
+  body {
+    @apply bg-bg text-tx text-sm leading-normal antialiased;
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background-image: radial-gradient(1200px 400px at 100% -10%, color-mix(in srgb, var(--pr) 9%, transparent), transparent);
+    background-attachment: fixed;
+  }
+  h2 { @apply mb-1 text-lg font-bold tracking-tight; }
   h3 { @apply mb-2.5 text-[15px] font-semibold; }
   :focus-visible { outline: 2px solid var(--pr); outline-offset: 2px; }
+  ::selection { background: color-mix(in srgb, var(--pr) 25%, transparent); }
 }
 
 @layer components {
-  .card { @apply mb-4 rounded-2xl border border-bd bg-card p-[18px]; }
+  .card { @apply mb-4 rounded-2xl border border-bd bg-card p-5 shadow-sm shadow-slate-200/50 dark:shadow-none; }
   .muted { @apply text-xs text-mu; }
-  .btn-pr { @apply min-h-10 cursor-pointer rounded-xl bg-pr px-4 py-2 font-semibold text-white disabled:opacity-60; }
-  .btn-gh { @apply min-h-10 cursor-pointer rounded-xl border border-bd bg-soft px-3.5 py-2 text-tx; }
-  .field { @apply min-h-10 w-full rounded-xl border border-bd bg-card px-3 py-2 text-tx; }
+  .btn-pr {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl bg-pr px-4 py-2 font-semibold text-white shadow-sm transition
+      hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-gh {
+    @apply inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-bd bg-card px-3.5 py-2 font-medium text-tx transition
+      hover:bg-soft active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .field {
+    @apply min-h-10 w-full rounded-xl border border-bd bg-card px-3 py-2 text-tx transition placeholder:text-mu
+      focus:border-pr focus:outline-none;
+  }
+  .field:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--pr) 14%, transparent); }
   .label { @apply mb-1 mt-3 block font-medium; }
   .err { @apply min-h-[1.1em] text-xs text-rose-600; }
   .badge { @apply inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold; background: color-mix(in srgb, currentColor 13%, transparent); }
-  .id-mono { @apply text-xs font-semibold text-pr; font-family: ui-monospace, monospace; }
+  .id-mono { @apply text-xs font-semibold text-pr; font-family: ui-monospace, 'Cascadia Code', monospace; }
   .nav-on { background: color-mix(in srgb, var(--pr) 12%, transparent); color: var(--pr); }
   .ok-box { @apply mb-2.5 rounded-xl px-3 py-2 font-medium text-emerald-600; background: color-mix(in srgb, #059669 14%, transparent); }
+  .panel { @apply rounded-2xl border border-bd bg-card p-5 shadow-sm shadow-slate-200/50 dark:shadow-none; }
+  .panel-title { @apply mb-3 text-base font-semibold; }
+  .chip { @apply min-h-9 cursor-pointer rounded-full border border-bd bg-card px-3.5 py-1.5 text-sm font-medium text-mu transition hover:text-tx; }
+  .chip-on { @apply border-pr bg-pr text-white hover:text-white; }
+  .tab { @apply min-h-10 flex-1 cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold text-mu transition hover:text-tx; }
+  .tab-on { @apply bg-card text-tx shadow-sm; }
+  .page-title { @apply text-2xl font-bold tracking-tight; }
+  .glass { background: color-mix(in srgb, var(--card) 85%, transparent); backdrop-filter: blur(12px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }

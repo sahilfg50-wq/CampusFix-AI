@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { CATEGORIES, DEPARTMENTS, PRIORITIES } from './constants.js';
 
-const SYSTEM_INSTRUCTION = `You are the complaint triage assistant for a college campus maintenance system.
+export const SYSTEM_INSTRUCTION = `You are the complaint triage assistant for a college campus maintenance system.
 Read one student complaint (title + description) and return a JSON object only.
 
 Fields:
@@ -32,6 +32,22 @@ const schema = {
   required: ['category', 'priority', 'department', 'analysis', 'suggestedAction'],
   propertyOrdering: ['category', 'priority', 'department', 'analysis', 'suggestedAction'],
 };
+
+// Same schema in standard JSON Schema form, for the local Ollama model.
+export const TRIAGE_JSON_SCHEMA = {
+  type: 'object',
+  properties: {
+    category: { type: 'string', enum: CATEGORIES },
+    priority: { type: 'string', enum: PRIORITIES },
+    department: { type: 'string', enum: DEPARTMENTS },
+    analysis: { type: 'string' },
+    suggestedAction: { type: 'string' },
+  },
+  required: ['category', 'priority', 'department', 'analysis', 'suggestedAction'],
+};
+
+export const triagePrompt = (title, description) =>
+  `Complaint title:\n<<<\n${title}\n>>>\n\nComplaint description:\n<<<\n${description}\n>>>`;
 
 // Calls Gemini through the official Google Gen AI SDK. The API key arrives from a Firebase secret.
 export async function generateAnalysis({ apiKey, model, title, description }) {

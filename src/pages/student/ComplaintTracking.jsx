@@ -3,6 +3,7 @@ import { StatusBadge, PriorityBadge, SimBadge, AiBadge } from '../../components/
 import { parseAiNote } from '../../utils/aiNote';
 import Timeline from '../../components/ui/Timeline';
 import EmptyState from '../../components/ui/EmptyState';
+import AgentCard from '../../components/ui/AgentCard';
 
 const STEPS = ['Submitted', 'AI triage & routed', 'Technician assigned', 'Resolved'];
 const STEP_INDEX = { Pending: 1, 'In Progress': 2, Resolved: 3 };
@@ -38,49 +39,10 @@ export default function ComplaintTracking({ complaints, selectedId, onSelect }) 
               ))}
             </div>
             <div className="muted">{ticket.category} · {ticket.building} · {ticket.location}</div>
-<div className="mt-3 rounded-xl bg-soft p-3">
-  <h3 className="font-semibold">CampusFix AI Agent</h3>
+          </div>
 
-  {!ticket.agentStatus && (
-    <p className="muted mt-2">
-      Agent processing status will appear shortly.
-    </p>
-  )}
-
-  {ticket.agentStatus === 'processing' && (
-    <p className="mt-2">
-      AI agent is investigating the complaint...
-    </p>
-  )}
-
-  {ticket.agentStatus === 'resolved' && (
-    <>
-      <p className="mt-2 font-semibold text-green-700">
-        AI Agent: Resolved
-      </p>
-      <p className="muted mt-1">
-        {ticket.agentResolution}
-      </p>
-    </>
-  )}
-
-  {ticket.agentStatus === 'escalated' && (
-    <>
-      <p className="mt-2 font-semibold">
-        AI Agent: Admin review required
-      </p>
-      <p className="muted mt-1">
-        {ticket.agentResolution}
-      </p>
-    </>
-  )}
-
-  {ticket.agentStatus === 'pending' && (
-    <p className="muted mt-2">
-      Agent processing has not started or could not be completed.
-    </p>
-  )}
-</div>
+          <div className="mb-4">
+            <AgentCard complaint={ticket} canRespond />
           </div>
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-3.5">

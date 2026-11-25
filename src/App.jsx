@@ -33,6 +33,7 @@ import AdminComplaintDetails from './pages/admin/AdminComplaintDetails';
 import AdminAnalytics from './pages/admin/AdminAnalytics';
 
 import MessManagement from './pages/admin/MessManagement';
+import AiInbox from './pages/admin/AiInbox';
 
 import FoodWasteDashboard from './pages/admin/FoodWasteDashboard';
 
@@ -258,6 +259,10 @@ function AuthenticatedPortal({
         page = (
           <AdminAnalytics complaints={complaints} />
         );
+        break;
+
+      case 'inbox':
+        page = <AiInbox complaints={complaints} onNavigate={onNavigate} />;
         break;
 
       case 'mess':

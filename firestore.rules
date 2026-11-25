@@ -147,8 +147,16 @@ function mealKey(meal) {
       allow create, update: if isAdmin()
         && request.resource.data.keys().hasOnly([
           'date', 'meal', 'preparedKg', 'servedMeals',
-          'leftoverKg', 'updatedAt', 'updatedBy'
+          'leftoverKg', 'wastedKg', 'totalStudents', 'updatedAt', 'updatedBy'
         ])
+        && (!('wastedKg' in request.resource.data)
+          || (request.resource.data.wastedKg is number
+            && request.resource.data.wastedKg >= 0
+            && request.resource.data.wastedKg <= request.resource.data.leftoverKg))
+        && (!('totalStudents' in request.resource.data)
+          || (request.resource.data.totalStudents is int
+            && request.resource.data.totalStudents >= 0
+            && request.resource.data.totalStudents <= 20000))
         && request.resource.data.date is string
         && request.resource.data.meal in ['Breakfast', 'Lunch', 'Dinner']
         && request.resource.data.preparedKg is number
@@ -161,6 +169,13 @@ function mealKey(meal) {
         && request.resource.data.updatedAt == request.time;
 
       allow delete: if false;
+    }
+
+    // ---------- email outbox ----------
+    // Written only by Cloud Functions. Admins can read it to see what the AI agent emailed.
+    match /mailOutbox/{mailId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
 // ---------- dinner token security ----------

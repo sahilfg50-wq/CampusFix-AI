@@ -8,11 +8,16 @@ import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 import { analyzeComplaint as run, AppError } from './src/analyze.js';
-import { generateAnalysis } from './src/gemini.js';
+import { generateAnalysis, SYSTEM_INSTRUCTION, TRIAGE_JSON_SCHEMA, triagePrompt } from './src/gemini.js';
 import { checkRateLimit } from './src/rateLimit.js';
 
 import { runAutonomousAgent } from './src/agent.js';
 import { createFirestoreAgentTools } from './src/firestoreAgentTools.js';
+import { analyzeFoodWaste as runFoodAnalysis, generateFoodAdvice } from './src/foodAi.js';
+import { RANGES, addDays } from './src/foodForecast.js';
+import { getLlm } from './src/llm.js';
+import { classifyRoute, buildSelfHelp, buildEmails, buildAdminEmail, EMERGENCY_SLA } from './src/complaintRouter.js';
+import { sendMail } from './src/mailer.js';
 
 initializeApp();
 
@@ -28,22 +33,61 @@ const GEMINI_MODEL = defineString('GEMINI_MODEL', {
 // Firebase automatically sets this in the local emulator.
 const isEmulator = process.env.FUNCTIONS_EMULATOR === 'true';
 
+// Gemini key: Firebase secret in production. In the emulator, an optional
+// GEMINI_API_KEY_LOCAL in functions/.env.local (free key from https://aistudio.google.com).
+// Returns '' when no key is configured, so callers fall back to rule-based logic.
+function geminiKey() {
+  if (isEmulator) return process.env.GEMINI_API_KEY_LOCAL || '';
+  try {
+    return GEMINI_API_KEY.value() || '';
+  } catch {
+    return '';
+  }
+}
+
+// Free AI provider for this request: Gemini if a key is set, otherwise local Ollama
+// (emulator only, nothing to pay), otherwise null so callers use their rule-based fallback.
+function pickLlm() {
+  return getLlm({
+    geminiKey: geminiKey(),
+    geminiModel: GEMINI_MODEL.value(),
+    ollamaModel: process.env.OLLAMA_MODEL || 'llama3.2:3b',
+    allowOllama: isEmulator,
+  });
+}
+
+// Today's date in India (the mess works on IST days).
+function todayIST() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+}
+
 // Existing Gemini complaint analysis function.
 export const analyzeComplaint = onCall(
-  { secrets: [GEMINI_API_KEY], timeoutSeconds: 60, memory: '256MiB' },
+  { secrets: isEmulator ? [] : [GEMINI_API_KEY], timeoutSeconds: 90, memory: '256MiB' },
   async (request) => {
     try {
+      const llm = await pickLlm();
+      if (!llm) {
+        throw new AppError(
+          'failed-precondition',
+          'No AI is running right now. Choose the category yourself. CampusFix rules will still route your complaint.'
+        );
+      }
       return await run({
         data: request.data,
         uid: request.auth?.uid,
         deps: {
-          checkRateLimit,
+          // The daily limit protects the free Gemini quota. Local AI has no quota.
+          checkRateLimit: llm.name === 'gemini' ? checkRateLimit : async () => {},
           generate: (input) =>
-            generateAnalysis({
-              apiKey: GEMINI_API_KEY.value(),
-              model: GEMINI_MODEL.value(),
-              ...input,
-            }),
+            llm.name === 'gemini'
+              ? generateAnalysis({ apiKey: geminiKey(), model: GEMINI_MODEL.value(), ...input })
+              : llm.generateJson({
+                  system: SYSTEM_INSTRUCTION,
+                  prompt: triagePrompt(input.title, input.description),
+                  schema: TRIAGE_JSON_SCHEMA,
+                  temperature: 0.2,
+                }),
           log: (e) =>
             logger.error('Gemini call failed', {
               status: e?.status,
@@ -153,66 +197,183 @@ export const processComplaintAutonomously = onCall(
       );
     }
 
-    const tools = createFirestoreAgentTools(db);
-
-    const result = await runAutonomousAgent({
-      complaintId,
-      complaint,
-      apiKey: isEmulator ? undefined : GEMINI_API_KEY.value(),
-      model: GEMINI_MODEL.value(),
-      executeTool: tools.executeAgentTool,
-      demoMode: isEmulator,
-    });
+    const full = { ...complaint, id: complaintId };
+    const { route, reason } = classifyRoute(full);
+    let outcome;
 
     try {
-      await db.runTransaction(async (transaction) => {
-        const snapshot = await transaction.get(complaintRef);
-
-        if (!snapshot.exists || snapshot.data().agentStatus !== 'processing') {
-          throw new Error(
-            'Complaint processing state changed unexpectedly.'
-          );
-        }
-
-        const resolved = result.status === 'resolved';
-
-        const note = resolved
-          ? 'CampusFix AI completed and independently verified the simulated portal recovery.'
-          : 'CampusFix AI could not safely resolve the complaint. Admin investigation is required.';
-
-        transaction.update(complaintRef, {
-          status: resolved ? 'Resolved' : 'In Progress',
-          agentStatus: resolved ? 'resolved' : 'escalated',
-          agentResolution: result.resolution,
-          agentHistory: result.history,
-          agentCompletedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-          updates: FieldValue.arrayUnion({
-            time: new Date().toISOString(),
-            actor: 'CampusFix AI Agent',
-            note,
-          }),
+      if (route === 'portal') {
+        const tools = createFirestoreAgentTools(db);
+        const result = await runAutonomousAgent({
+          complaintId,
+          complaint,
+          apiKey: isEmulator ? undefined : geminiKey(),
+          model: GEMINI_MODEL.value(),
+          executeTool: tools.executeAgentTool,
+          demoMode: isEmulator,
         });
-      });
+        if (result.status === 'resolved') {
+          outcome = {
+            status: 'Resolved',
+            agentStatus: 'resolved',
+            agentRoute: route,
+            agentResolution: result.resolution,
+            agentHistory: result.history,
+            note: 'CampusFix AI completed and independently verified the simulated portal recovery.',
+          };
+        } else {
+          outcome = await forwardOutcome(full, {
+            route: 'department',
+            reason: `${result.resolution} Forwarded to ${complaint.department}.`,
+            history: result.history,
+          });
+        }
+      } else if (route === 'self-help') {
+        const llm = await pickLlm();
+        const help = await buildSelfHelp(full, {
+          generate: llm ? (args) => llm.generateJson(args) : null,
+          log: (e) => logger.warn('Self-help AI failed, using built-in guide', { message: String(e?.message).slice(0, 200) }),
+        });
+        if (help.canSelfSolve) {
+          outcome = {
+            status: 'In Progress',
+            agentStatus: 'awaiting-student',
+            agentRoute: route,
+            agentResolution: `${reason} Try the steps below and tell us if it worked.`,
+            aiSelfHelp: { ...help, provider: help.source === 'ai' ? llm?.label : 'Built-in guide' },
+            note: 'CampusFix AI sent step-by-step fix instructions to the student.',
+          };
+        } else {
+          outcome = await forwardOutcome(full, {
+            route: 'department',
+            reason: `${help.reason || 'Not something the student can fix alone.'} Forwarded to ${complaint.department}.`,
+          });
+        }
+      } else if (route === 'admin') {
+        outcome = await adminOutcome(full, reason);
+      } else {
+        outcome = await forwardOutcome(full, { route, reason });
+      }
     } catch (error) {
-      logger.error('Could not save autonomous agent result', {
-        complaintId,
-        message: String(error?.message || error).slice(0, 300),
-      });
-
-      throw new HttpsError(
-        'internal',
-        'The agent finished, but its result could not be saved.'
-      );
+      logger.error('Agent routing failed', { complaintId, message: String(error?.message || error).slice(0, 300) });
+      outcome = await adminOutcome(full, 'The AI agent hit an error. Admin review is required.');
     }
+
+    await saveOutcome(complaintRef, outcome);
 
     return {
       complaintId,
-      status: result.status,
-      resolution: result.resolution,
+      route: outcome.agentRoute,
+      status: outcome.agentStatus,
+      resolution: outcome.agentResolution,
     };
   }
 );
+
+// ---------- complaint routing helpers ----------
+
+const mailLog = (e) => logger.error('Email send failed', { message: String(e?.message || e).slice(0, 300) });
+
+// Emails the department (cc admin) and marks the complaint as forwarded.
+async function forwardOutcome(complaint, { route, reason, extra, history }) {
+  const mails = buildEmails(complaint, { route, reason, extra });
+  const sent = [];
+  for (const mail of mails) {
+    const record = await sendMail(db, { ...mail, complaintId: complaint.id }, { log: mailLog });
+    sent.push({ to: record.to, cc: record.cc, status: record.status, outboxId: record.id });
+  }
+  const emergency = route === 'emergency';
+  return {
+    status: 'In Progress',
+    agentStatus: emergency ? 'escalated' : 'forwarded',
+    agentRoute: route,
+    agentResolution: reason,
+    referredToAdmin: true,
+    emailsSent: sent,
+    ...(emergency ? { priority: 'Critical', sla: EMERGENCY_SLA } : {}),
+    ...(history ? { agentHistory: history } : {}),
+    note: `${emergency ? 'URGENT: ' : ''}CampusFix AI emailed ${complaint.department} (${sent.map((s) => s.to).join(', ')}) and informed the admin.`,
+  };
+}
+
+async function adminOutcome(complaint, reason) {
+  const record = await sendMail(db, { ...buildAdminEmail(complaint, reason), complaintId: complaint.id }, { log: mailLog });
+  return {
+    status: 'Pending',
+    agentStatus: 'escalated',
+    agentRoute: 'admin',
+    agentResolution: reason,
+    referredToAdmin: true,
+    emailsSent: [{ to: record.to, cc: null, status: record.status, outboxId: record.id }],
+    note: 'CampusFix AI referred this complaint to the admin for a decision.',
+  };
+}
+
+async function saveOutcome(complaintRef, outcome) {
+  const { note, ...fields } = outcome;
+  try {
+    await complaintRef.update({
+      ...fields,
+      agentCompletedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      updates: FieldValue.arrayUnion({
+        time: new Date().toISOString(),
+        actor: 'CampusFix AI Agent',
+        note,
+      }),
+    });
+  } catch (error) {
+    logger.error('Could not save agent result', { message: String(error?.message || error).slice(0, 300) });
+    throw new HttpsError('internal', 'The agent finished, but its result could not be saved.');
+  }
+}
+
+// Student: tell the agent whether the self-help steps fixed the problem.
+export const respondToSelfHelp = onCall({ timeoutSeconds: 60 }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Please log in first.');
+
+  const { complaintId, solved } = request.data || {};
+  if (typeof complaintId !== 'string' || !complaintId || complaintId.length > 100 || typeof solved !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'Complaint ID and answer are required.');
+  }
+
+  const ref = db.collection('complaints').doc(complaintId);
+  // Claim the complaint so a double click cannot send two emails.
+  const complaint = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError('not-found', 'Complaint not found.');
+    const data = snap.data();
+    if (data.studentId !== uid) throw new HttpsError('permission-denied', 'You can only answer for your own complaint.');
+    if (data.agentStatus !== 'awaiting-student') {
+      throw new HttpsError('failed-precondition', 'This complaint is no longer waiting for your answer.');
+    }
+    tx.update(ref, { agentStatus: 'processing', updatedAt: FieldValue.serverTimestamp() });
+    return { ...data, id: complaintId };
+  });
+
+  let outcome;
+  if (solved) {
+    outcome = {
+      status: 'Resolved',
+      agentStatus: 'resolved',
+      agentResolution: 'Fixed by the student using the CampusFix AI self-help steps.',
+      note: 'Student confirmed the self-help steps fixed the problem.',
+    };
+  } else {
+    const tried = (complaint.aiSelfHelp?.steps || []).map((s, i) => `${i + 1}. ${s}`).join('\n');
+    outcome = await forwardOutcome(complaint, {
+      route: 'department',
+      reason: 'The student tried the AI self-help steps but the problem is not fixed.',
+      extra: tried ? `Steps the student already tried:\n${tried}` : '',
+    });
+  }
+
+  await saveOutcome(ref, outcome);
+  return { status: outcome.agentStatus };
+});
+
+// ---------- end complaint routing ----------
 // ---------- DINNER NON-VEG TOKEN SYSTEM ----------
 
 async function requireMessAdmin(uid) {
@@ -525,6 +686,85 @@ export const markDinnerTokenServed = onCall(
       });
 
       throw new HttpsError('internal', 'Could not verify dinner token.');
+    }
+  }
+);
+
+// ---------- AI FOOD WASTE ANALYSIS ----------
+
+// Admin: analyse historical food reports and forecast how much to cook on a target date.
+export const analyzeFoodWaste = onCall(
+  {
+    secrets: isEmulator ? [] : [GEMINI_API_KEY],
+    timeoutSeconds: 60,
+    memory: '512MiB',
+  },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError('unauthenticated', 'Please log in first.');
+    }
+    await requireMessAdmin(uid);
+
+    const { range = '12m', targetDate, totalStudents } = request.data || {};
+    const today = todayIST();
+
+    if (!RANGES[range]) {
+      throw new HttpsError('invalid-argument', 'Unknown date range.');
+    }
+    if (
+      targetDate != null &&
+      (typeof targetDate !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(targetDate) ||
+        targetDate <= today ||
+        targetDate > addDays(today, 400))
+    ) {
+      throw new HttpsError('invalid-argument', 'Choose a future date within the next year.');
+    }
+    const strength = totalStudents == null ? null : Number(totalStudents);
+    if (strength != null && (!Number.isInteger(strength) || strength < 1 || strength > 20000)) {
+      throw new HttpsError('invalid-argument', 'Hostel strength must be a whole number.');
+    }
+
+    // Festival factors need the same festival from earlier years, so always read
+    // at least ~2.2 years of history even when the dashboard range is shorter.
+    const from = range === 'all' ? null : addDays(today, -800);
+    let query = db.collection('mealReports');
+    if (from) query = query.where('date', '>=', from);
+    const snapshot = await query.get();
+    const reports = snapshot.docs.map((d) => d.data());
+
+    const llm = await pickLlm();
+    let generate = null;
+    if (llm) {
+      try {
+        // Rate limit protects the free Gemini quota. Local Ollama has no quota.
+        if (llm.name === 'gemini') await checkRateLimit(uid);
+        generate = (payload) => generateFoodAdvice({ llm, payload });
+      } catch (error) {
+        logger.warn('Food analysis AI skipped (rate limit)', { message: String(error?.message) });
+      }
+    }
+
+    try {
+      const result = await runFoodAnalysis({
+        reports,
+        today,
+        range,
+        targetDate,
+        totalStudents: strength,
+        generate,
+        aiSource: llm?.name,
+        log: (e) =>
+          logger.error('Gemini food analysis failed', {
+            status: e?.status,
+            message: String(e?.message || e).slice(0, 300),
+          }),
+      });
+      return { ...result, aiConfigured: Boolean(llm), aiLabel: llm?.label || null };
+    } catch (error) {
+      logger.error('Food analysis crashed', { message: String(error?.message || error).slice(0, 300) });
+      throw new HttpsError('internal', 'Could not analyse food data.');
     }
   }
 );

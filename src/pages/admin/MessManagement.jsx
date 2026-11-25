@@ -1,11 +1,13 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   saveMealMenu,
+  subscribeDailyMenu,
   subscribeMealConfirmations,
   lookupDinnerToken,
   markDinnerTokenServed,
 } from '../../services/mess';
+import { formatTimeRange, parseTimeRange } from '../../utils/mealTime';
 
 const initialMenu = {
   Breakfast: {
@@ -46,6 +48,43 @@ export default function MessManagement() {
 
   const [confirmations, setConfirmations] = useState([]);
   const [confirmationError, setConfirmationError] = useState('');
+
+  // Menus already published in Firestore for the selected date, keyed by meal.
+  const [published, setPublished] = useState({});
+  // Meals the admin has edited but not yet published. Live updates never overwrite these.
+  const dirty = useRef(new Set());
+
+  useEffect(() => {
+    dirty.current = new Set();
+    setPublished({});
+    setMenu(initialMenu);
+
+    const unsubscribe = subscribeDailyMenu(
+      date,
+      (items) => {
+        const byMeal = Object.fromEntries(items.map((item) => [item.meal, item]));
+        setPublished(byMeal);
+        setMenu((previous) => {
+          const next = { ...previous };
+          for (const name of Object.keys(initialMenu)) {
+            const saved = byMeal[name];
+            if (saved && !dirty.current.has(name)) {
+              next[name] = {
+                time: saved.time ?? initialMenu[name].time,
+                deadline: saved.deadline ?? initialMenu[name].deadline,
+                veg: saved.veg ?? '',
+                nonVeg: saved.nonVeg ?? '',
+              };
+            }
+          }
+          return next;
+        });
+      },
+      (err) => setError(err.message || 'Could not load published menus.')
+    );
+
+    return () => unsubscribe();
+  }, [date]);
 
   const [tokenInput, setTokenInput] = useState('');
   const [tokenDetails, setTokenDetails] = useState(null);
@@ -100,6 +139,7 @@ export default function MessManagement() {
   const totalCount = mealConfirmations.length;
 
   const updateField = (field, value) => {
+    dirty.current.add(meal);
     setMenu((previous) => ({
       ...previous,
       [meal]: {
@@ -124,6 +164,7 @@ export default function MessManagement() {
         ...menu[meal],
       });
 
+      dirty.current.delete(meal);
       setMessage(`${meal} menu published successfully.`);
     } catch (err) {
       setError(err.message || 'Could not publish the menu.');
@@ -180,6 +221,9 @@ export default function MessManagement() {
   };
 
   const current = menu[meal];
+  const timeRange = parseTimeRange(current.time);
+  const publishedMenu = published[meal];
+  const hasUnsavedChanges = dirty.current.has(meal);
 
   return (
     <div className="space-y-5">
@@ -227,193 +271,29 @@ export default function MessManagement() {
         }
       `}</style>
 
-      <div className="no-print">
-        <h2 className="text-2xl font-bold">Mess Management</h2>
-        <p className="mt-1 text-sm text-mu">
-          Publish daily menus and manage meal confirmation deadlines.
-        </p>
-      </div>
-
-      <div className="no-print rounded-2xl border border-bd bg-card p-4">
-        <label className="mb-2 block text-sm font-medium">
-          Menu Date
-        </label>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => {
-            setDate(e.target.value);
-            setMessage('');
-            setTokenDetails(null);
-            setTokenInput('');
-            setTokenError('');
-          }}
-          className="w-full rounded-xl border border-bd bg-bg p-3"
-        />
-      </div>
-
-      <div className="rounded-2xl border border-orange-500 bg-card p-4 no-print">
-        <h3 className="text-lg font-semibold">
-          Dinner Token Verification
-        </h3>
-        <p className="mt-1 text-sm text-mu">
-          Enter a student's 3-digit Non-Veg dinner token.
-        </p>
-
-        <div className="mt-4 flex gap-2">
+      <div className="no-print flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="page-title">Mess Management</h2>
+          <p className="mt-1 text-sm text-mu">Publish menus, watch confirmations and verify dinner tokens.</p>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-xs font-medium text-mu">Menu date</span>
           <input
-            type="text"
-            inputMode="numeric"
-            maxLength={3}
-            value={tokenInput}
+            type="date"
+            value={date}
             onChange={(e) => {
-              setTokenInput(e.target.value.replace(/\D/g, '').slice(0, 3));
+              setDate(e.target.value);
+              setMessage('');
               setTokenDetails(null);
+              setTokenInput('');
               setTokenError('');
             }}
-            placeholder="e.g. 025"
-            className="min-w-0 flex-1 rounded-xl border border-bd bg-bg p-3 tracking-widest"
+            className="field !w-auto"
           />
-
-          <button
-            type="button"
-            onClick={searchToken}
-            disabled={tokenLoading || tokenInput.length !== 3}
-            className="btn-pr px-5 disabled:opacity-50"
-          >
-            {tokenLoading ? 'Checking...' : 'Lookup'}
-          </button>
-        </div>
-
-        {tokenError && (
-          <p className="mt-3 text-sm text-red-500">{tokenError}</p>
-        )}
-
-        {tokenDetails && (
-          <div className="mt-4 rounded-xl border border-bd bg-soft p-4">
-            <p className="text-sm text-mu">Student Name</p>
-            <p className="text-xl font-bold">
-              {tokenDetails.studentName}
-            </p>
-
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs text-mu">Token</p>
-                <p className="font-semibold">{tokenDetails.tokenNumber}</p>
-              </div>
-              <div>
-                <p className="text-xs text-mu">Preference</p>
-                <p className="font-semibold">{tokenDetails.preference}</p>
-              </div>
-              <div>
-                <p className="text-xs text-mu">Meal</p>
-                <p className="font-semibold">{tokenDetails.meal}</p>
-              </div>
-              <div>
-                <p className="text-xs text-mu">Status</p>
-                <p className="font-semibold">{tokenDetails.status}</p>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs text-mu">
-              Cross-check the student's identity before marking the meal as served.
-            </p>
-
-            {tokenDetails.status === 'Pending' ? (
-              <button
-                type="button"
-                onClick={verifyToken}
-                disabled={serving}
-                className="btn-pr mt-4 w-full disabled:opacity-50"
-              >
-                {serving ? 'Verifying...' : 'Confirm & Mark as Served'}
-              </button>
-            ) : (
-              <p className="mt-4 text-sm font-semibold text-emerald-600">
-                {tokenDetails.status === 'Served'
-                  ? 'This token has already been served.'
-                  : 'This token is not valid for serving.'}
-              </p>
-            )}
-          </div>
-        )}
+        </label>
       </div>
 
-      <div
-        id="non-veg-print-list"
-        className="rounded-2xl border border-orange-500 bg-card p-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold">
-              Non-Veg Dinner Confirmation List
-            </h3>
-            <p className="mt-1 text-sm text-mu">
-              Date: {date}
-            </p>
-            <p className="mt-1 text-sm font-semibold">
-              Total Confirmations: {dinnerNonVegConfirmations.length}
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={printNonVegList}
-            disabled={
-              dinnerNonVegConfirmations.length === 0 ||
-              Boolean(confirmationError)
-            }
-            className="btn-pr no-print disabled:opacity-50"
-          >
-            Print Non-Veg List
-          </button>
-        </div>
-
-        {confirmationError ? (
-          <p className="mt-4 text-sm text-red-500">
-            {confirmationError}
-          </p>
-        ) : dinnerNonVegConfirmations.length === 0 ? (
-          <p className="mt-4 rounded-xl bg-soft p-4 text-sm text-mu">
-            No Non-Veg dinner confirmations found for this date.
-          </p>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[520px] border-collapse text-sm">
-              <thead>
-                <tr className="bg-soft">
-                  <th className="border border-bd p-3 text-left">S.No.</th>
-                  <th className="border border-bd p-3 text-left">Student Name</th>
-                  <th className="border border-bd p-3 text-left">Student ID</th>
-                  <th className="border border-bd p-3 text-left">Token Code</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dinnerNonVegConfirmations.map((item, index) => (
-                  <tr key={item.id || item.tokenNumber}>
-                    <td className="border border-bd p-3">{index + 1}</td>
-                    <td className="border border-bd p-3 font-medium">
-                      {item.studentName || 'Name unavailable'}
-                    </td>
-                    <td className="border border-bd p-3">
-                      {item.studentId || item.uid || 'N/A'}
-                    </td>
-                    <td className="border border-bd p-3 font-bold tracking-widest">
-                      {String(item.tokenNumber).padStart(3, '0')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <p className="mt-3 text-xs text-mu">
-          Staff should match both the student's name and token code before serving.
-        </p>
-      </div>
-
-      <div className="no-print grid grid-cols-3 gap-2">
+      <div className="no-print grid grid-cols-3 gap-1 rounded-2xl bg-soft p-1">
         {Object.keys(menu).map((name) => (
           <button
             key={name}
@@ -423,129 +303,211 @@ export default function MessManagement() {
               setMessage('');
               setError('');
             }}
-            className={`rounded-xl p-3 font-semibold ${
-              meal === name
-                ? 'bg-blue-600 text-white'
-                : 'bg-soft text-tx'
-            }`}
+            className={`tab ${meal === name ? 'tab-on' : ''}`}
           >
-            {name}
+            {name === 'Breakfast' ? '🌅' : name === 'Lunch' ? '☀️' : '🌙'} {name}
+            {published[name] && <span className="ml-1.5 inline-block h-2 w-2 rounded-full bg-emerald-500" title="Published" />}
           </button>
         ))}
       </div>
 
-      <div className="no-print rounded-2xl border border-bd bg-card p-4">
-        <h3 className="text-lg font-semibold">
-          {meal} Confirmations
-        </h3>
-
-        {confirmationError ? (
-          <p className="mt-3 text-sm text-red-500">
-            {confirmationError}
-          </p>
-        ) : (
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-soft p-3">
-              <p className="text-xs text-mu">Total</p>
-              <p className="mt-1 text-2xl font-bold">{totalCount}</p>
-            </div>
-
-            <div className="rounded-xl bg-soft p-3">
-              <p className="text-xs text-mu">Veg</p>
-              <p className="mt-1 text-2xl font-bold">{vegCount}</p>
-            </div>
-
-            <div className="rounded-xl bg-soft p-3">
-              <p className="text-xs text-mu">Non-Veg</p>
-              <p className="mt-1 text-2xl font-bold">{nonVegCount}</p>
-            </div>
+      <div className="no-print grid gap-5 lg:grid-cols-[3fr_2fr]">
+        <div className="panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="panel-title !mb-0">{meal} menu</h3>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                hasUnsavedChanges
+                  ? 'bg-amber-100 text-amber-700'
+                  : publishedMenu
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-soft text-mu'
+              }`}
+            >
+              {hasUnsavedChanges ? 'Unsaved changes' : publishedMenu ? 'Published' : 'Not published yet'}
+            </span>
           </div>
-        )}
 
-        <p className="mt-3 text-xs text-mu">
-          Counts update automatically when students confirm or change
-          their meal preference.
-        </p>
-      </div>
-
-      <div className="no-print rounded-2xl border border-bd bg-card p-4">
-        <h3 className="text-lg font-semibold">{meal} Settings</h3>
-
-        <div className="mt-4 space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Meal Timing
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Starts</span>
+              <input
+                type="time"
+                value={timeRange.start}
+                onChange={(e) => updateField('time', formatTimeRange(e.target.value, timeRange.end))}
+                className="field"
+              />
             </label>
-            <input
-              value={current.time}
-              onChange={(e) => updateField('time', e.target.value)}
-              className="w-full rounded-xl border border-bd bg-bg p-3"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Confirmation Deadline
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Ends</span>
+              <input
+                type="time"
+                value={timeRange.end}
+                onChange={(e) => updateField('time', formatTimeRange(timeRange.start, e.target.value))}
+                className="field"
+              />
             </label>
-            <input
-              type="time"
-              value={current.deadline}
-              onChange={(e) => updateField('deadline', e.target.value)}
-              className="w-full rounded-xl border border-bd bg-bg p-3"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Veg Menu
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Confirm by</span>
+              <input
+                type="time"
+                value={current.deadline}
+                onChange={(e) => updateField('deadline', e.target.value)}
+                className="field"
+              />
             </label>
-            <textarea
-              rows={3}
-              value={current.veg}
-              onChange={(e) => updateField('veg', e.target.value)}
-              className="w-full rounded-xl border border-bd bg-bg p-3"
-            />
           </div>
+          <p className="mt-1.5 text-xs text-mu">Students will see: {current.time || 'not set'} · confirm before {current.deadline}</p>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium">
-              Non-Veg Menu
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                <i className="h-2.5 w-2.5 rounded-sm border-2 border-emerald-600" /> Veg menu
+              </span>
+              <textarea rows={3} value={current.veg} onChange={(e) => updateField('veg', e.target.value)} className="field" />
             </label>
-            <textarea
-              rows={3}
-              value={current.nonVeg}
-              onChange={(e) => updateField('nonVeg', e.target.value)}
-              className="w-full rounded-xl border border-bd bg-bg p-3"
-            />
+            <label className="block">
+              <span className="mb-1 flex items-center gap-1.5 text-sm font-medium">
+                <i className="h-2.5 w-2.5 rounded-sm border-2 border-rose-600" /> Non-veg menu
+              </span>
+              <textarea rows={3} value={current.nonVeg} onChange={(e) => updateField('nonVeg', e.target.value)} className="field" />
+            </label>
           </div>
+          <p className="mt-1 text-xs text-mu">Separate dishes with commas.</p>
 
-          <button
-            type="button"
-            onClick={publishMenu}
-            disabled={saving || !date}
-            className="btn-pr w-full disabled:opacity-50"
-          >
-            {saving ? 'Publishing...' : 'Publish Menu'}
+          <button type="button" onClick={publishMenu} disabled={saving || !date} className="btn-pr mt-5 w-full">
+            {saving ? 'Publishing…' : publishedMenu ? `Update ${meal} menu` : `Publish ${meal} menu`}
           </button>
+          {message && <p className="mt-3 text-sm font-medium text-emerald-600">{message}</p>}
+          {error && <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>}
+        </div>
 
-          {message && (
-            <p className="text-sm font-medium text-emerald-600">
-              {message}
-            </p>
-          )}
+        <div className="space-y-5">
+          <div className="panel">
+            <h3 className="panel-title">{meal} confirmations</h3>
+            {confirmationError ? (
+              <p className="text-sm text-rose-600">{confirmationError}</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ['Total', totalCount, 'text-tx'],
+                    ['Veg', vegCount, 'text-emerald-600'],
+                    ['Non-Veg', nonVegCount, 'text-rose-600'],
+                  ].map(([label, value, tone]) => (
+                    <div key={label} className="rounded-xl bg-soft p-3">
+                      <p className="text-xs text-mu">{label}</p>
+                      <p className={`mt-1 text-2xl font-bold ${tone}`}>{value}</p>
+                    </div>
+                  ))}
+                </div>
+                {totalCount > 0 && (
+                  <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-soft">
+                    <div className="bg-emerald-500" style={{ width: `${(vegCount / totalCount) * 100}%` }} />
+                    <div className="bg-rose-500" style={{ width: `${(nonVegCount / totalCount) * 100}%` }} />
+                  </div>
+                )}
+              </>
+            )}
+            <p className="mt-3 text-xs text-mu">Updates live when students confirm or change.</p>
+          </div>
 
-          {error && (
-            <p className="text-sm font-medium text-red-500">
-              {error}
-            </p>
-          )}
+          <div className="panel">
+            <h3 className="panel-title">🎟️ Dinner token check</h3>
+            <p className="-mt-2 text-xs text-mu">Enter the student's 3-digit non-veg dinner token.</p>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={3}
+                value={tokenInput}
+                onChange={(e) => {
+                  setTokenInput(e.target.value.replace(/\D/g, '').slice(0, 3));
+                  setTokenDetails(null);
+                  setTokenError('');
+                }}
+                placeholder="025"
+                className="field min-w-0 flex-1 text-center text-lg font-bold tracking-[0.4em]"
+              />
+              <button type="button" onClick={searchToken} disabled={tokenLoading || tokenInput.length !== 3} className="btn-pr">
+                {tokenLoading ? 'Checking…' : 'Lookup'}
+              </button>
+            </div>
+
+            {tokenError && <p className="mt-3 text-sm text-rose-600">{tokenError}</p>}
+
+            {tokenDetails && (
+              <div className="mt-4 rounded-xl border border-bd bg-soft p-4">
+                <p className="text-xs text-mu">Student</p>
+                <p className="text-lg font-bold">{tokenDetails.studentName}</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div><p className="text-xs text-mu">Token</p><p className="font-semibold">{tokenDetails.tokenNumber}</p></div>
+                  <div><p className="text-xs text-mu">Status</p><p className="font-semibold">{tokenDetails.status}</p></div>
+                </div>
+                <p className="mt-3 text-xs text-mu">Check the student's ID card before serving.</p>
+                {tokenDetails.status === 'Pending' ? (
+                  <button type="button" onClick={verifyToken} disabled={serving} className="btn-pr mt-3 w-full">
+                    {serving ? 'Verifying…' : 'Confirm & mark as served'}
+                  </button>
+                ) : (
+                  <p className="mt-3 text-sm font-semibold text-emerald-600">
+                    {tokenDetails.status === 'Served' ? 'Already served.' : 'This token is not valid for serving.'}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <p className="no-print text-xs text-mu">
-        Published menus are saved in Firestore. Students can view
-        the menu for the selected date.
-      </p>
+      <div id="non-veg-print-list" className="panel">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="panel-title !mb-0">Non-veg dinner list</h3>
+            <p className="mt-1 text-sm text-mu">
+              {date} · {dinnerNonVegConfirmations.length} confirmed
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={printNonVegList}
+            disabled={dinnerNonVegConfirmations.length === 0 || Boolean(confirmationError)}
+            className="btn-gh no-print"
+          >
+            🖨️ Print list
+          </button>
+        </div>
+
+        {confirmationError ? (
+          <p className="mt-4 text-sm text-rose-600">{confirmationError}</p>
+        ) : dinnerNonVegConfirmations.length === 0 ? (
+          <p className="mt-4 rounded-xl bg-soft p-4 text-sm text-mu">No non-veg dinner confirmations for this date.</p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wide text-mu">
+                  <th className="p-3">#</th>
+                  <th className="p-3">Student name</th>
+                  <th className="p-3">Student ID</th>
+                  <th className="p-3">Token</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dinnerNonVegConfirmations.map((item, index) => (
+                  <tr key={item.id || item.tokenNumber} className="border-t border-bd">
+                    <td className="p-3">{index + 1}</td>
+                    <td className="p-3 font-medium">{item.studentName || 'Name unavailable'}</td>
+                    <td className="p-3 text-xs text-mu">{item.studentId || item.uid || 'N/A'}</td>
+                    <td className="p-3 font-bold tracking-widest">{String(item.tokenNumber).padStart(3, '0')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-mu">Staff should match both the student's name and token before serving.</p>
+      </div>
     </div>
   );
 }

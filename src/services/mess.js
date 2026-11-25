@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   where,
@@ -218,10 +219,12 @@ export async function saveFoodReport({
   preparedKg,
   servedMeals,
   leftoverKg,
+  wastedKg,
+  totalStudents,
 }) {
   const user = requireUser();
 
-  const values = [preparedKg, servedMeals, leftoverKg];
+  const values = [preparedKg, servedMeals, leftoverKg, wastedKg, totalStudents];
 
   if (!date || !['Breakfast', 'Lunch', 'Dinner'].includes(meal)) {
     throw new Error('Valid date and meal are required.');
@@ -233,6 +236,14 @@ export async function saveFoodReport({
     throw new Error('Report quantities must be non-negative numbers.');
   }
 
+  if (Number(leftoverKg) > Number(preparedKg)) {
+    throw new Error('Leftover food cannot be more than the food prepared.');
+  }
+
+  if (Number(wastedKg) > Number(leftoverKg)) {
+    throw new Error('Wasted food cannot be more than the leftover food.');
+  }
+
   const id = menuId(date, meal);
 
   await setDoc(
@@ -241,8 +252,10 @@ export async function saveFoodReport({
       date,
       meal,
       preparedKg: Number(preparedKg),
-      servedMeals: Number(servedMeals),
+      servedMeals: Math.round(Number(servedMeals)),
       leftoverKg: Number(leftoverKg),
+      wastedKg: Number(wastedKg),
+      totalStudents: Math.round(Number(totalStudents)),
       updatedAt: serverTimestamp(),
       updatedBy: user.uid,
     },
@@ -250,6 +263,24 @@ export async function saveFoodReport({
   );
 
   return id;
+}
+
+// Admin: all food reports from a date onwards (null = all time), for analytics.
+export async function fetchFoodReports(fromDate) {
+  requireUser();
+  const reports = collection(db, 'mealReports');
+  const q = fromDate ? query(reports, where('date', '>=', fromDate)) : reports;
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((item) => item.data());
+}
+
+// Admin: AI wastage analysis and cooking forecast (Cloud Function).
+export async function analyzeFoodWaste({ range, targetDate, totalStudents }) {
+  requireUser();
+  if (!functions) throw new Error('Firebase Functions are not configured.');
+  const call = httpsCallable(functions, 'analyzeFoodWaste', { timeout: 65000 });
+  const result = await call({ range, targetDate, totalStudents });
+  return result.data;
 }
 
 // Admin: listen to food reports for a date.
