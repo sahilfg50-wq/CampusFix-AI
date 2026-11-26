@@ -44,7 +44,7 @@ Every new complaint is routed automatically:
 
 - Routing rules run first. The AI can only make a complaint more escalated, never less.
 - Admins see everything in the **AI Inbox**: referred complaints and every email the agent sent.
-- Emails go out free through Gmail (App Password). Without SMTP settings they are recorded as "simulated".
+- Emails can be sent free through Gmail (App Password); real sending has not been verified yet. Without SMTP settings they are recorded as "simulated".
 - Department email addresses are in `functions/src/departments.js` (demo addresses by default).
 
 **Demo limitation:** Portal recovery is simulated. It does not control or restart a real college portal or infrastructure.
@@ -54,6 +54,7 @@ Every new complaint is routed automatically:
 - Students can view available meals.
 - Students can confirm meal preferences.
 - Admins can view confirmation counts.
+- Digital non-veg dinner tokens: students get a 3-digit token (downloadable PDF), mess staff look it up, mark it served once, and can print the token list.
 
 ### 6. Food Waste Dashboard
 - **Daily Report:** prepared kg, meals served, leftover kg, thrown-away kg and hostel strength (to count skipped meals).
@@ -65,10 +66,10 @@ Every new complaint is routed automatically:
 Meal confirmations represent expected demand, not verified actual consumption.
 
 ### 7. Free AI options
-All AI features work without paying anything:
-1. **Gemini free tier:** free key from Google AI Studio.
-2. **Ollama:** free AI that runs on your own computer, no key or account (local demo only).
-3. **No AI:** built-in rule-based logic (troubleshooting guides, routing rules, forecast formulas). This is the default.
+Every feature runs without paying anything, using built-in logic. An AI model is optional:
+1. **No AI (default, tested):** built-in rule-based logic (troubleshooting guides, routing rules, forecast formulas).
+2. **Gemini free tier (optional, not yet verified live):** free key from Google AI Studio.
+3. **Ollama (optional, not yet verified):** free AI that runs on your own computer, no key or account (local demo only).
 
 ## Technology Stack
 
@@ -252,31 +253,53 @@ The following were tested in the local prototype:
 - Complaint submission and tracking
 - Admin complaint management
 - Simulated AI Agent portal recovery
-- Admin analytics
+- Admin analytics data access (the charts are drawn in the browser and are not covered by the scripted checks)
 - Mess menu publishing
 - Student meal confirmation
 - Food waste report saving and reloading
+- Complaint routing (self-help, department, emergency, admin) and the student "fixed / still not working" answer, using rule-based mode
+- Department emails recorded in the outbox (simulated, not sent)
+- Food waste analysis and forecast ("Analyze Wastage") in rule-based mode, using the synthetic demo data
+- Admin-only access to the food analysis and the email outbox
 - Backend unit tests
 - Frontend production build
 
-The local demo was tested using Firebase Emulators. Production Firebase deployment and live Gemini API integration have not been verified.
+The local demo was tested using Firebase Emulators, with scripted checks that sign in as real student and admin accounts so the Firestore security rules apply. These checks cover the backend and data rules, not the browser screens. Production Firebase deployment, live Gemini API integration, Ollama and real email sending have not been verified.
+
+## Feature Status
+
+**Implemented** (available in the code; backend functionality and data rules verified on local emulators where noted):
+- Complaint submission, tracking and admin management
+- Automatic complaint routing: self-help steps, department forwarding, emergency escalation and admin referral, with the AI Inbox
+- Mess menu publishing, meal confirmations and digital non-veg dinner tokens
+- Food waste analytics with 7-day, 30-day, 12-month, 2-year and all-time filters (Food Waste Dashboard)
+- Food demand forecast for breakfast, lunch and dinner, with recommended cooking quantities
+- Festival, break and exam-based consumption analysis
+- Estimated cost of waste and estimated savings
+
+**Partially implemented** (works, with the limits noted):
+- **AI-written explanations** (food analysis, self-help steps, complaint triage): without a Gemini key or a running Ollama model, built-in rules and guides are used instead. Live Gemini and Ollama have not been verified.
+- **Department email notifications:** emails are built and recorded in the AI Inbox, but are only actually sent when Gmail SMTP is configured. Real sending has not been verified. Department addresses are demo addresses.
+- **Festival calendar:** approximate demo dates hard-coded in `functions/src/festivals.js`. There is no admin screen to edit them.
+- **Cost estimates:** use a fixed rate of ₹60/kg (`COST_PER_KG` in `functions/src/foodForecast.js`).
+- **Portal recovery:** simulated. It does not control a real college portal.
 
 ## Planned Features & Future Enhancements
 
-- Advanced analytics with 7-day, 30-day, 12-month, 2-year, and all-time data filters.
-- AI-powered food waste analysis using historical preparation, consumption, and wastage data.
-- Predictive food demand forecasting for breakfast, lunch, and dinner.
-- Smart food preparation recommendations based on historical trends and student demand.
-- Festival and holiday-based food consumption analysis.
-- Estimated cost savings through reduced food waste and unnecessary food preparation.
-- Automatic email notifications to relevant departments based on complaint categories.
-- Improved complaint escalation and administrative workflows.
+- Time-range filters (7 days to all time) for complaint analytics. Today, the complaint trend chart covers the last 7 days and the other complaint charts have no date filter.
+- Admin screen to manage the campus festival, holiday and exam calendar.
+- Configurable food cost per kg for savings estimates.
+- Email notifications to students when their complaint status changes.
+- Integration with real campus systems (portal, network) for the AI agent.
+- Production Firebase deployment.
 
 ## Current Limitations
 
 - Autonomous portal recovery is simulated and does not affect real campus infrastructure.
 - Live Gemini functionality requires API configuration and deployment.
 - Meal confirmations indicate expected demand, not actual food consumption.
+- The 2-year food history loaded by `npm run seed` is synthetic demo data. Forecasts are only as good as the real reports saved later.
+- Without SMTP settings, department emails are recorded as "simulated" and not sent.
 - Production deployment and real-world integration require additional testing.
 
 ## Repository
