@@ -21,5 +21,6 @@ export async function analyzeComplaintWithAI({ title, description }) {
     typeof data.aiNote === 'string' && data.aiNote.length <= 300;
   if (!ok) throw bad();
   const { category, priority, department, analysis, suggestedAction, sla, aiNote } = data;
-  return { category, priority, department, analysis, suggestedAction, sla, aiNote };
+  const provider = typeof data.provider === 'string' ? data.provider.slice(0, 40) : 'AI';
+  return { category, priority, department, analysis, suggestedAction, sla, aiNote, provider };
 }

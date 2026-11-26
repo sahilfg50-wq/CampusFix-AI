@@ -75,7 +75,7 @@ function mapUpstreamError(e) {
   if ([400, 401, 403, 404].includes(status)) {
     return new AppError('failed-precondition', 'The AI service is not set up correctly. Please tell the administrator.');
   }
-  return new AppError('unavailable', 'The AI service is not reachable right now. You can choose the category manually.');
+  return new AppError('unavailable', 'The AI service is not reachable right now. The complaint will be classified automatically by CampusFix rules.');
 }
 
 // deps: { checkRateLimit(uid), generate({title, description}) -> text, log?(error) }

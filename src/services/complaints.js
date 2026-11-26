@@ -25,18 +25,24 @@ function newComplaintId() {
   return `CFX-${new Date().getFullYear()}-${[...bytes].map((b) => chars[b % chars.length]).join('')}`;
 }
 
+// triage = automatic classification (src/utils/triage.js, optionally merged with AI):
+// { category, priority, department, sla, aiNote, source: 'rules' | 'ai', provider?, needsAdminReview? }
 export async function createComplaint(user, profile, form, triage) {
   const id = newComplaintId();
   const now = new Date().toISOString();
+  const actor = triage.source === 'ai' ? `CampusFix AI (${triage.provider || 'AI'})` : 'CampusFix AI (auto-classification)';
+  const routedNote = triage.needsAdminReview
+    ? 'Problem type not clear from the description. Sent to the campus admin for review.'
+    : `Auto-categorised as ${triage.category}, ${triage.priority} priority, assigned to ${triage.department}.`;
   const data = {
     complaintId: id,
     title: form.title.trim(),
     description: form.description.trim(),
-    category: form.category,
+    category: triage.category || form.category,
     building: form.building,
     location: form.location.trim(),
     department: triage.department,
-    priority: triage.priority, // suggested by the SIMULATED triage; admins can change it
+    priority: triage.priority, // set automatically; admins can change it
     status: 'Pending',
     reporter: profile.name,
     studentId: user.uid,
@@ -45,13 +51,14 @@ export async function createComplaint(user, profile, form, triage) {
     sla: triage.sla,
     updates: [
       { time: now, actor: 'Student Portal', note: 'Complaint submitted.' },
-      { time: now, actor: triage.source === 'gemini' ? 'CampusFix AI (Gemini)' : 'CampusFix AI (Simulated)', note: `Auto-assigned to ${triage.department} with ${triage.priority} priority.` },
+      { time: now, actor, note: routedNote },
     ],
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
   await setDoc(doc(db, 'complaints', id), data);
-  return { ...data, id, createdAt: now, updatedAt: now };
+  // needsAdminReview is only returned to the screen, not stored (the Firestore document shape is unchanged).
+  return { ...data, id, createdAt: now, updatedAt: now, needsAdminReview: Boolean(triage.needsAdminReview) };
 }
 
 // Admin only (enforced by Firestore rules).

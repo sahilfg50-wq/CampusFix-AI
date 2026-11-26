@@ -127,23 +127,14 @@ function AuthenticatedPortal({
     setConfirm(null);
   };
 
-  const submitComplaint = async (form, ai) => {
+  // `classification` comes from the automatic classifier (rules, optionally merged with AI).
+  // The built-in rules are the fallback, so a complaint can always be submitted.
+  const submitComplaint = async (form, classification) => {
     const complaint = await createComplaint(
       user,
       profile,
       form,
-      ai
-        ? {
-            department: ai.department,
-            priority: ai.priority,
-            sla: ai.sla,
-            aiNote: ai.aiNote,
-            source: 'gemini',
-          }
-        : {
-            ...simulateTriage(form),
-            source: 'rules',
-          }
+      classification || simulateTriage(form)
     );
 
     // Start autonomous processing in the background.

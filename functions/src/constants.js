@@ -23,4 +23,6 @@ export const LIMITS = { titleMin: 5, titleMax: 120, descMin: 15, descMax: 2000, 
 
 // The student app recognises Gemini notes by this exact format (see src/utils/aiNote.js).
 export const NOTE_PREFIX = 'Gemini analysis: ';
+// Same format when the local Ollama model answered instead of Gemini.
+export const LOCAL_NOTE_PREFIX = 'Local AI analysis: ';
 export const NOTE_SEPARATOR = ' Suggested action: ';

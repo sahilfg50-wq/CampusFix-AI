@@ -13,20 +13,14 @@
 // physical problems are decided by these rules before any AI is asked anything.
 
 import { departmentEmail, ADMIN_EMAIL } from './departments.js';
+// One emergency list for both the automatic classification and the routing.
+import { EMERGENCY_WORDS, normalizeText } from './classify.js';
 
 export const EMERGENCY_SLA = 'Within 4 hours (Demo SLA)';
 
 // Whole-word / whole-phrase match, so "rat" does not match "rate" and "tap" does not match "startapp".
 const escape = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const has = (text, words) => words.some((w) => new RegExp(`\\b${escape(w)}\\b`).test(text));
-
-const EMERGENCY_WORDS = [
-  'fire', 'smoke', 'smoking socket', 'spark', 'sparks', 'sparking', 'shock', 'electric shock', 'electrocuted',
-  'electrocution', 'gas leak', 'gas smell', 'burning smell', 'short circuit', 'collapse', 'collapsed',
-  'injured', 'injury', 'bleeding', 'unconscious', 'fainted', 'medical emergency', 'ambulance',
-  'harassment', 'harassed', 'harassing', 'assault', 'fight', 'threat', 'threatened', 'stalking',
-  'theft', 'stolen', 'intruder', 'ragging',
-];
 
 // Words that mean someone has to physically come and repair something.
 const PHYSICAL_WORDS = [
@@ -104,7 +98,7 @@ export const SELF_HELP_GUIDES = [
 ];
 
 function textOf(c) {
-  return ` ${[c.title, c.description].join(' ').toLowerCase()} `;
+  return ` ${normalizeText(c.title, c.description)} `;
 }
 
 export function findGuide(complaint) {

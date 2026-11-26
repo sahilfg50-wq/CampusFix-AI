@@ -1,31 +1,9 @@
-import { DEPARTMENTS } from '../data/constants';
+// Built-in automatic complaint classification (no AI, no network).
+// The rules live in functions/src/classify.js so the app and the Cloud Functions use the same logic.
+export { classifyComplaint, autoClassify, autoTitle } from '../../functions/src/classify.js';
+import { classifyComplaint } from '../../functions/src/classify.js';
 
-/**
- * SIMULATED AI triage. This is a fixed keyword rule set, not a real AI model.
- * No network request is made.
- */
-const DEPT_BY_CATEGORY = {
-  'Wi-Fi & IT': DEPARTMENTS[0],
-  Electrical: DEPARTMENTS[1],
-  Plumbing: DEPARTMENTS[2],
-  Housekeeping: DEPARTMENTS[3],
-  'Security & Safety': DEPARTMENTS[4],
-  'Mess & Dining': DEPARTMENTS[5],
-};
-const SLA = { Critical: 'Within 4 hours', High: 'Within 12 hours', Medium: 'Within 24 hours', Low: 'Within 48 hours' };
-const has = (text, words) => words.some((w) => text.includes(w));
-
-export function simulateTriage({ title, description, category }) {
-  const text = `${title} ${description}`.toLowerCase();
-  const department = DEPT_BY_CATEGORY[category] || DEPARTMENTS[6];
-  let priority = 'Medium';
-  let reason = `Categorised under ${category}`;
-  if (has(text, ['spark', 'fire', 'shock', 'emergency', 'smoke', 'hazard'])) {
-    priority = 'Critical'; reason = 'Safety-critical keywords detected';
-  } else if (has(text, ['leak', 'dark', 'no water', 'wifi', 'wi-fi', 'disconnect', 'slippery'])) {
-    priority = 'High'; reason = 'High-impact disruption detected';
-  } else if (has(text, ['chair', 'paint', 'minor', 'squeak'])) {
-    priority = 'Low'; reason = 'Routine maintenance pattern';
-  }
-  return { department, priority, sla: `${SLA[priority]} (Demo SLA)`, aiNote: `${reason}. Routed to ${department}.` };
+// Kept for existing callers: same result as classifyComplaint (category, priority, department, sla, aiNote).
+export function simulateTriage({ title, description }) {
+  return classifyComplaint({ title, description });
 }

@@ -9,6 +9,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
 import { analyzeComplaint as run, AppError } from './src/analyze.js';
 import { generateAnalysis, SYSTEM_INSTRUCTION, TRIAGE_JSON_SCHEMA, triagePrompt } from './src/gemini.js';
+import { NOTE_PREFIX, LOCAL_NOTE_PREFIX } from './src/constants.js';
 import { checkRateLimit } from './src/rateLimit.js';
 
 import { runAutonomousAgent } from './src/agent.js';
@@ -68,12 +69,10 @@ export const analyzeComplaint = onCall(
     try {
       const llm = await pickLlm();
       if (!llm) {
-        throw new AppError(
-          'failed-precondition',
-          'No AI is running right now. Choose the category yourself. CampusFix rules will still route your complaint.'
-        );
+        // The app then classifies the complaint with its built-in rules. Students never see this.
+        throw new AppError('failed-precondition', 'No AI provider is configured.');
       }
-      return await run({
+      const result = await run({
         data: request.data,
         uid: request.auth?.uid,
         deps: {
@@ -89,12 +88,19 @@ export const analyzeComplaint = onCall(
                   temperature: 0.2,
                 }),
           log: (e) =>
-            logger.error('Gemini call failed', {
+            logger.error('AI triage call failed', {
+              provider: llm.name,
               status: e?.status,
               message: String(e?.message || e).slice(0, 300),
             }),
         },
       });
+      // Label the stored note with the AI that actually answered (see src/utils/aiNote.js).
+      const aiNote =
+        llm.name === 'gemini'
+          ? result.aiNote
+          : result.aiNote.replace(NOTE_PREFIX, LOCAL_NOTE_PREFIX).slice(0, 300);
+      return { ...result, aiNote, provider: llm.label };
     } catch (e) {
       if (e instanceof AppError) {
         throw new HttpsError(e.code, e.message);

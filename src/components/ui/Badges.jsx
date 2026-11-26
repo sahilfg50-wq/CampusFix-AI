@@ -8,12 +8,12 @@ export const PriorityBadge = ({ priority }) => (
   <span className="badge" style={{ color: PRIORITY_COLOR[priority] }}>{priority}</span>
 );
 
-// Gemini-powered results use AiBadge; rule-based results keep the "Simulated" label.
+// AI-assisted results (Gemini or local AI) use AiBadge.
 export const AiBadge = ({ children = 'Gemini AI' }) => (
   <span className="badge text-indigo-500">{children}</span>
 );
 
-// Used wherever the rule-based (non-Gemini) triage is shown, so it is always labelled as simulated.
-export const SimBadge = ({ children = 'Simulated AI' }) => (
+// Used wherever the built-in rule-based classification is shown, so it is never mistaken for AI.
+export const SimBadge = ({ children = 'Auto-classified' }) => (
   <span className="badge text-indigo-500">{children}</span>
 );

@@ -52,7 +52,7 @@ export default function ComplaintTracking({ complaints, selectedId, onSelect }) 
             </div>
             <div className="card">
               <h3>Department &amp; SLA</h3>
-              {parseAiNote(ticket.aiNote).source === 'gemini' ? <AiBadge>Gemini AI</AiBadge> : <SimBadge>Simulated AI</SimBadge>}
+              {parseAiNote(ticket.aiNote).source === 'rules' ? <SimBadge>Auto-classified</SimBadge> : <AiBadge>{parseAiNote(ticket.aiNote).label}</AiBadge>}
               <p className="my-2"><b>{ticket.department}</b><br />Target: {ticket.sla}</p>
               <p className="muted">{parseAiNote(ticket.aiNote).analysis}</p>
             </div>

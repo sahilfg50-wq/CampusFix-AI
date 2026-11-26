@@ -69,7 +69,7 @@ export default function AdminComplaintDetails({ complaint: c, onNavigate, onUpda
             <p className="my-2">{c.description}</p>
             <div className="muted">Reported by {c.reporter} · {c.category} · {c.building}, {c.location}</div>
             <div className="mt-3 rounded-xl bg-soft p-2.5">
-              {ai.source === 'gemini' ? <AiBadge>Gemini AI analysis</AiBadge> : <SimBadge>Simulated rule engine</SimBadge>}
+              {ai.source === 'rules' ? <SimBadge>Auto-classified (built-in rules)</SimBadge> : <AiBadge>{ai.label} analysis</AiBadge>}
               <p className="my-1.5">{ai.analysis}</p>
               {ai.action && <p><b>Suggested action:</b> {ai.action}</p>}
             </div>
